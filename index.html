@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SCORE BADMINTON</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor / FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Fonts: Bebas Neue for bold score digits & Pretendard/Inter for typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Tone.js Web Audio -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-num {
+      font-family: 'Bebas Neue', 'Orbitron', monospace;
+      font-variant-numeric: tabular-nums;
+      line-height: 0.9;
+    }
+    /* Minimalistic dark theme */
+    .bg-canvas {
+      background-color: #0b0f17;
+    }
+    .panel-card {
+      background: linear-gradient(180deg, #131b29 0%, #0d121c 100%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+      transition: transform 0.08s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .panel-card:active {
+      transform: scale(0.992);
+    }
+    .panel-card.serving {
+      border-color: rgba(16, 185, 129, 0.5);
+      box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.2);
+    }
+    /* Subtle split divider like professional scoreboard */
+    .split-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 1px;
+      background: rgba(0, 0, 0, 0.45);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+      z-index: 5;
+      pointer-events: none;
+    }
+    /* Quick score bump animation */
+    @keyframes bump {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
+    .score-bump {
+      animation: bump 0.2s cubic-bezier(0.2, 0.8, 0.4, 1);
+    }
+  </style>
+</head>
+<body class="bg-canvas min-h-screen text-slate-100 flex flex-col justify-between overflow-x-hidden p-2 sm:p-4 md:p-6">
+
+  <!-- Header Bar -->
+  <header class="w-full max-w-6xl mx-auto flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800/80">
+    <!-- Brand -->
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold text-sm">
+        🏸
+      </div>
+      <div>
+        <h1 class="text-sm sm:text-base font-extrabold tracking-wider text-slate-100 flex items-center gap-2">
+          SCORE BADMINTON
+          <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700/60 font-sans uppercase">Pro</span>
+        </h1>
+      </div>
+    </div>
+
+    <!-- Match Information Status -->
+    <div class="flex items-center gap-2 sm:gap-3">
+      <!-- Live Game status banner -->
+      <div id="statusPill" class="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-xs font-semibold text-slate-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="statusPillText">SET 1 진행 중</span>
+      </div>
+
+      <!-- Match Timer -->
+      <button onclick="toggleTimer()" class="flex items-center gap-1.5 bg-slate-800/80 hover:bg-slate-700/80 px-2.5 py-1 rounded-lg border border-slate-700/60 text-xs font-medium text-slate-300 transition">
+        <i class="fa-regular fa-clock text-emerald-400 text-[11px]"></i>
+        <span id="matchTimer" class="font-mono font-bold">00:00</span>
+      </button>
+
+      <!-- Settings Icon -->
+      <button onclick="openSettingsModal()" class="w-8 h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 flex items-center justify-center transition" title="설정">
+        <i class="fa-solid fa-sliders text-xs"></i>
+      </button>
+
+      <!-- Fullscreen Toggle -->
+      <button onclick="toggleFullscreen()" class="w-8 h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 hidden sm:flex items-center justify-center transition" title="전체화면">
+        <i class="fa-solid fa-expand text-xs"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="w-full max-w-6xl mx-auto flex-1 flex flex-col justify-center py-2 sm:py-4">
+
+    <!-- Mobile Mini Status (Visible on phones) -->
+    <div class="flex sm:hidden justify-center items-center gap-2 mb-2">
+      <span id="mobileStatusText" class="text-xs font-medium px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-emerald-300">
+        SET 1 • 21점제
+      </span>
+    </div>
+
+    <!-- Main Score Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 relative items-stretch">
+
+      <!-- Center Court Switcher Pill for Desktop -->
+      <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 hidden md:flex flex-col items-center gap-1">
+        <button onclick="swapSides()" class="w-11 h-11 rounded-full bg-slate-900 border border-slate-700 hover:border-emerald-400 text-slate-300 hover:text-emerald-300 shadow-2xl flex items-center justify-center active:scale-95 transition-transform" title="코트 체인지">
+          <i class="fa-solid fa-repeat text-sm"></i>
+        </button>
+        <span class="text-[9px] font-mono text-slate-500 uppercase tracking-widest font-bold">CHANGE</span>
+      </div>
+
+      <!-- ================= PLAYER / TEAM A PANEL ================= -->
+      <section id="panelTeamA" class="panel-card rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex flex-col justify-between relative group cursor-pointer" onclick="handleCardClick('A', event)">
+        
+        <!-- Top Info Header -->
+        <div class="flex items-center justify-between z-10">
+          <!-- Player Name with quick edit pencil -->
+          <div class="flex items-center gap-2 max-w-[75%]" onclick="event.stopPropagation(); editNameInline('A');">
+            <span id="nameA" class="text-lg sm:text-2xl font-bold tracking-tight text-white hover:text-emerald-300 transition truncate cursor-text">
+              선수 1
+            </span>
+            <i class="fa-solid fa-pencil text-[11px] text-slate-500 hover:text-emerald-400 cursor-pointer"></i>
+          </div>
+
+          <!-- Service Shuttle Badge -->
+          <button onclick="event.stopPropagation(); setServingTeam('A');" id="serveTagA" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 transition">
+            <span>🏸 SERVE</span>
+          </button>
+        </div>
+
+        <!-- Huge Score Number -->
+        <div class="relative py-6 sm:py-16 flex flex-col items-center justify-center my-auto select-none pointer-events-none">
+          <div class="split-line"></div>
+          <div id="scoreA" class="font-num text-[110px] sm:text-[160px] md:text-[190px] font-extrabold text-white tracking-tight drop-shadow-md">
+            0
+          </div>
+          <span class="text-[11px] text-slate-500 font-medium tracking-wider uppercase mt-1">
+            터치하여 +1 득점
+          </span>
+        </div>
+
+        <!-- Panel Footer: Set Counter & Minus Button -->
+        <div class="flex items-center justify-between z-10 pt-2 border-t border-slate-800/80">
+          <!-- Won Sets Indicator -->
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">세트</span>
+            <div id="setsWonA" class="flex items-center gap-1.5">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Minus 1 Point Button -->
+          <button onclick="event.stopPropagation(); subtractPoint('A');" class="w-8 h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-rose-400 font-bold text-base flex items-center justify-center active:scale-95 transition" title="1점 차감">
+            -
+          </button>
+        </div>
+      </section>
+
+      <!-- ================= PLAYER / TEAM B PANEL ================= -->
+      <section id="panelTeamB" class="panel-card rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex flex-col justify-between relative group cursor-pointer" onclick="handleCardClick('B', event)">
+        
+        <!-- Top Info Header -->
+        <div class="flex items-center justify-between z-10">
+          <!-- Player Name with quick edit pencil -->
+          <div class="flex items-center gap-2 max-w-[75%]" onclick="event.stopPropagation(); editNameInline('B');">
+            <span id="nameB" class="text-lg sm:text-2xl font-bold tracking-tight text-white hover:text-emerald-300 transition truncate cursor-text">
+              선수 2
+            </span>
+            <i class="fa-solid fa-pencil text-[11px] text-slate-500 hover:text-emerald-400 cursor-pointer"></i>
+          </div>
+
+          <!-- Service Shuttle Badge -->
+          <button onclick="event.stopPropagation(); setServingTeam('B');" id="serveTagB" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 transition">
+            <span>🏸 SERVE</span>
+          </button>
+        </div>
+
+        <!-- Huge Score Number -->
+        <div class="relative py-6 sm:py-16 flex flex-col items-center justify-center my-auto select-none pointer-events-none">
+          <div class="split-line"></div>
+          <div id="scoreB" class="font-num text-[110px] sm:text-[160px] md:text-[190px] font-extrabold text-white tracking-tight drop-shadow-md">
+            0
+          </div>
+          <span class="text-[11px] text-slate-500 font-medium tracking-wider uppercase mt-1">
+            터치하여 +1 득점
+          </span>
+        </div>
+
+        <!-- Panel Footer: Set Counter & Minus Button -->
+        <div class="flex items-center justify-between z-10 pt-2 border-t border-slate-800/80">
+          <!-- Won Sets Indicator -->
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">세트</span>
+            <div id="setsWonB" class="flex items-center gap-1.5">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Minus 1 Point Button -->
+          <button onclick="event.stopPropagation(); subtractPoint('B');" class="w-8 h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-rose-400 font-bold text-base flex items-center justify-center active:scale-95 transition" title="1점 차감">
+            -
+          </button>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Mobile Court Change Button (Below panels on mobile) -->
+    <div class="flex md:hidden justify-center mt-3">
+      <button onclick="swapSides()" class="px-4 py-2 rounded-xl bg-slate-800/90 border border-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-2 active:scale-95 transition">
+        <i class="fa-solid fa-repeat text-emerald-400"></i> 코트 좌우 교체
+      </button>
+    </div>
+
+    <!-- Clean Set Scores History Pills -->
+    <div id="historyBar" class="mt-4 flex items-center justify-center gap-2 text-xs">
+      <!-- Injected by JS -->
+    </div>
+  </main>
+
+  <!-- Bottom Actions Footer -->
+  <footer class="w-full max-w-xl mx-auto pt-2">
+    <div class="flex items-center gap-2 bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl shadow-xl backdrop-blur-md">
+      <!-- Undo Button -->
+      <button onclick="undoLastAction()" id="undoBtn" class="flex-1 py-2 px-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition disabled:opacity-30 disabled:pointer-events-none">
+        <i class="fa-solid fa-arrow-rotate-left text-yellow-400 text-xs"></i>
+        <span>되돌리기</span>
+      </button>
+
+      <!-- Next Set / Finish Set -->
+      <button onclick="completeCurrentSetManual()" class="flex-1 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/20 active:scale-95 transition">
+        <i class="fa-solid fa-flag-checkered text-xs"></i>
+        <span id="setCompleteBtnText">세트 종료</span>
+      </button>
+
+      <!-- Sound Toggle -->
+      <button onclick="toggleAudio()" class="w-9 h-9 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 flex items-center justify-center transition" title="소리 켜기/끄기">
+        <i id="audioIcon" class="fa-solid fa-volume-high text-emerald-400 text-xs"></i>
+      </button>
+
+      <!-- Match Reset -->
+      <button onclick="resetMatch()" class="w-9 h-9 rounded-xl bg-slate-800/80 hover:bg-rose-950/40 text-slate-400 hover:text-rose-400 flex items-center justify-center transition" title="새 경기 시작">
+        <i class="fa-solid fa-arrows-rotate text-xs"></i>
+      </button>
+    </div>
+  </footer>
+
+  <!-- ================= MODAL: QUICK SETTINGS ================= -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl relative">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-emerald-400"></i> 경기 규칙 설정
+        </h3>
+        <button onclick="closeModal('settingsModal')" class="text-slate-400 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <!-- Target Points -->
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1.5">세트당 승리 점수</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button onclick="setRulePoints(21)" class="target-btn py-2 rounded-xl font-bold border transition" data-pts="21">21점</button>
+            <button onclick="setRulePoints(15)" class="target-btn py-2 rounded-xl font-bold border transition" data-pts="15">15점</button>
+            <button onclick="setRulePoints(11)" class="target-btn py-2 rounded-xl font-bold border transition" data-pts="11">11점</button>
+          </div>
+        </div>
+
+        <!-- Number of Sets -->
+        <div>
+          <label class="block text-slate-400 font-semibold mb-1.5">세트 방식</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="setRuleSets(3)" class="sets-btn py-2 rounded-xl font-bold border transition" data-sets="3">3세트 2선승</button>
+            <button onclick="setRuleSets(1)" class="sets-btn py-2 rounded-xl font-bold border transition" data-sets="1">단판 승부</button>
+          </div>
+        </div>
+
+        <div class="bg-slate-800/60 p-3 rounded-xl border border-slate-700/50 text-slate-400 leading-relaxed text-[11px]">
+          • 듀스 규칙: 동점 시 2점 차 승리 (최대 30점 상한선)<br>
+          • 득점한 선수에게 서브권이 자동으로 이동합니다.
+        </div>
+      </div>
+
+      <div class="mt-5">
+        <button onclick="closeModal('settingsModal')" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md">
+          확인
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: INLINE NAME EDIT ================= -->
+  <div id="nameModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xs w-full p-4 shadow-2xl">
+      <h3 class="text-sm font-bold text-white mb-2">선수 이름 변경</h3>
+      <input type="text" id="nameInput" maxlength="12" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-medium mb-3" placeholder="이름을 입력하세요">
+      <div class="flex gap-2">
+        <button onclick="closeModal('nameModal')" class="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 font-medium text-xs">취소</button>
+        <button onclick="saveNameInput()" class="flex-1 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODAL: SET / MATCH WINNER ================= -->
+  <div id="winModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-emerald-500/30 rounded-3xl max-w-xs w-full p-6 text-center shadow-2xl relative">
+      <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-2xl flex items-center justify-center">
+        🏆
+      </div>
+      <span id="winBadge" class="text-[11px] font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+        SET WINNER
+      </span>
+      <h2 id="winTitle" class="text-xl font-extrabold text-white mt-2 mb-1">선수 1 승리!</h2>
+      <p id="winDetail" class="text-xs text-slate-400 mb-5">21 : 18</p>
+
+      <div class="space-y-2">
+        <button id="nextSetActionBtn" onclick="nextSetStart()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md">
+          다음 세트 시작
+        </button>
+        <button onclick="resetMatch()" class="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs">
+          새 게임 시작
+        </button>
+        <button onclick="closeModal('winModal')" class="w-full py-1.5 text-slate-500 hover:text-slate-400 text-[11px]">
+          점수판 닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ==========================================================
+       SCORE BADMINTON - CLEAN MODERN LOGIC
+       ========================================================== */
+    const appState = {
+      teamA: { id: 'A', name: '선수 1', score: 0, sets: 0 },
+      teamB: { id: 'B', name: '선수 2', score: 0, sets: 0 },
+      serving: 'A',
+      currentSet: 1,
+      targetPoints: 21,
+      maxSets: 3,
+      maxCapPoints: 30,
+      setHistory: [],
+      history: [],
+      timerSeconds: 0,
+      timerActive: true,
+      audioEnabled: true,
+      editingTeam: null
+    };
+
+    let timerInterval = null;
+    let synth = null;
+
+    // Initialize Web Audio
+    function initSynth() {
+      if (!synth && window.Tone) {
+        try {
+          synth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "sine" },
+            envelope: { attack: 0.005, decay: 0.08, sustain: 0.01, release: 0.1 }
+          }).toDestination();
+          synth.volume.value = -8;
+        } catch(e) {}
+      }
+    }
+
+    function soundBeep(type) {
+      if (!appState.audioEnabled) return;
+      initSynth();
+      if (Tone.context.state !== 'running') {
+        Tone.start();
+      }
+      try {
+        const t = Tone.now();
+        if (type === 'score') {
+          synth.triggerAttackRelease("G5", "16n", t);
+        } else if (type === 'undo') {
+          synth.triggerAttackRelease("D4", "16n", t);
+        } else if (type === 'win') {
+          synth.triggerAttackRelease(["C5", "E5", "G5", "C6"], "8n", t);
+        }
+      } catch (err) {}
+    }
+
+    // Save History Snapshot
+    function pushHistory() {
+      const snap = {
+        teamA: { ...appState.teamA },
+        teamB: { ...appState.teamB },
+        serving: appState.serving,
+        currentSet: appState.currentSet,
+        setHistory: [...appState.setHistory]
+      };
+      appState.history.push(snap);
+      if (appState.history.length > 30) appState.history.shift();
+      updateUndoState();
+    }
+
+    function updateUndoState() {
+      const btn = document.getElementById('undoBtn');
+      if (btn) btn.disabled = appState.history.length === 0;
+    }
+
+    function undoLastAction() {
+      if (appState.history.length === 0) return;
+      const prev = appState.history.pop();
+      appState.teamA = { ...prev.teamA };
+      appState.teamB = { ...prev.teamB };
+      appState.serving = prev.serving;
+      appState.currentSet = prev.currentSet;
+      appState.setHistory = prev.setHistory;
+
+      soundBeep('undo');
+      render();
+      updateUndoState();
+    }
+
+    // Handle Scoring Click
+    function handleCardClick(teamId, event) {
+      addPoint(teamId);
+    }
+
+    function addPoint(teamId) {
+      pushHistory();
+
+      if (teamId === 'A') {
+        appState.teamA.score += 1;
+        appState.serving = 'A';
+      } else {
+        appState.teamB.score += 1;
+        appState.serving = 'B';
+      }
+
+      soundBeep('score');
+      animateScore(teamId);
+
+      const winner = checkSetWinner();
+      if (winner) {
+        onSetWin(winner);
+      } else {
+        render();
+      }
+    }
+
+    function subtractPoint(teamId) {
+      const target = teamId === 'A' ? appState.teamA : appState.teamB;
+      if (target.score <= 0) return;
+      pushHistory();
+      target.score -= 1;
+      soundBeep('undo');
+      render();
+    }
+
+    function setServingTeam(teamId) {
+      pushHistory();
+      appState.serving = teamId;
+      render();
+    }
+
+    function animateScore(teamId) {
+      const el = document.getElementById(`score${teamId}`);
+      if (el) {
+        el.classList.remove('score-bump');
+        void el.offsetWidth;
+        el.classList.add('score-bump');
+      }
+    }
+
+    // BWF Badminton Rules Engine
+    function checkSetWinner() {
+      const a = appState.teamA.score;
+      const b = appState.teamB.score;
+      const target = appState.targetPoints;
+      const cap = appState.maxCapPoints;
+
+      // 30 points ceiling
+      if (a >= cap && a > b) return 'A';
+      if (b >= cap && b > a) return 'B';
+
+      // 2 points lead from target
+      if (a >= target && a - b >= 2) return 'A';
+      if (b >= target && b - a >= 2) return 'B';
+
+      return null;
+    }
+
+    function onSetWin(winnerId) {
+      const winner = winnerId === 'A' ? appState.teamA : appState.teamB;
+      winner.sets += 1;
+
+      appState.setHistory.push({
+        set: appState.currentSet,
+        scoreA: appState.teamA.score,
+        scoreB: appState.teamB.score,
+        winner: winnerId
+      });
+
+      const setsNeeded = Math.ceil(appState.maxSets / 2);
+      const isMatchEnd = winner.sets >= setsNeeded;
+
+      soundBeep('win');
+      render();
+      showWinModal(winnerId, isMatchEnd);
+    }
+
+    function completeCurrentSetManual() {
+      const winner = appState.teamA.score >= appState.teamB.score ? 'A' : 'B';
+      onSetWin(winner);
+    }
+
+    function showWinModal(winnerId, isMatchEnd) {
+      const modal = document.getElementById('winModal');
+      const winBadge = document.getElementById('winBadge');
+      const winTitle = document.getElementById('winTitle');
+      const winDetail = document.getElementById('winDetail');
+      const nextBtn = document.getElementById('nextSetActionBtn');
+      const winner = winnerId === 'A' ? appState.teamA : appState.teamB;
+
+      if (isMatchEnd) {
+        winBadge.textContent = "MATCH COMPLETED 🏆";
+        winTitle.textContent = `${winner.name} 최종 승리!`;
+        winDetail.textContent = `세트 스코어 ${appState.teamA.sets} : ${appState.teamB.sets}`;
+        nextBtn.classList.add('hidden');
+      } else {
+        winBadge.textContent = `SET ${appState.currentSet} 종료`;
+        winTitle.textContent = `${winner.name} 세트 승리!`;
+        winDetail.textContent = `${appState.teamA.score} : ${appState.teamB.score}`;
+        nextBtn.classList.remove('hidden');
+      }
+      modal.classList.remove('hidden');
+    }
+
+    function nextSetStart() {
+      closeModal('winModal');
+      appState.currentSet += 1;
+      appState.teamA.score = 0;
+      appState.teamB.score = 0;
+      // Winner of previous set serves
+      const last = appState.setHistory[appState.setHistory.length - 1];
+      if (last) appState.serving = last.winner;
+      render();
+    }
+
+    function swapSides() {
+      pushHistory();
+      const tempTeam = { ...appState.teamA };
+      appState.teamA = { ...appState.teamB, id: 'A' };
+      appState.teamB = { ...tempTeam, id: 'B' };
+      appState.serving = appState.serving === 'A' ? 'B' : 'A';
+      render();
+    }
+
+    function resetMatch() {
+      closeModal('winModal');
+      appState.teamA.score = 0;
+      appState.teamA.sets = 0;
+      appState.teamB.score = 0;
+      appState.teamB.sets = 0;
+      appState.currentSet = 1;
+      appState.setHistory = [];
+      appState.history = [];
+      appState.timerSeconds = 0;
+      appState.serving = 'A';
+      updateUndoState();
+      render();
+    }
+
+    // Inline Name Editing
+    function editNameInline(teamId) {
+      appState.editingTeam = teamId;
+      const currentName = teamId === 'A' ? appState.teamA.name : appState.teamB.name;
+      const input = document.getElementById('nameInput');
+      input.value = currentName;
+      document.getElementById('nameModal').classList.remove('hidden');
+      setTimeout(() => {
+        input.focus();
+        input.select();
+      }, 50);
+    }
+
+    function saveNameInput() {
+      const val = document.getElementById('nameInput').value.trim();
+      if (val && appState.editingTeam) {
+        if (appState.editingTeam === 'A') appState.teamA.name = val;
+        else appState.teamB.name = val;
+      }
+      closeModal('nameModal');
+      render();
+    }
+
+    // Modal Generic
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function openSettingsModal() {
+      document.getElementById('settingsModal').classList.remove('hidden');
+      syncSettingsUI();
+    }
+
+    function setRulePoints(pts) {
+      appState.targetPoints = pts;
+      syncSettingsUI();
+      render();
+    }
+
+    function setRuleSets(s) {
+      appState.maxSets = s;
+      syncSettingsUI();
+      render();
+    }
+
+    function syncSettingsUI() {
+      document.querySelectorAll('.target-btn').forEach(b => {
+        const val = parseInt(b.getAttribute('data-pts'));
+        if (val === appState.targetPoints) {
+          b.className = "target-btn py-2 rounded-xl font-bold border border-emerald-500 bg-emerald-500/20 text-emerald-300";
+        } else {
+          b.className = "target-btn py-2 rounded-xl font-bold border border-slate-700 bg-slate-800 text-slate-300";
+        }
+      });
+      document.querySelectorAll('.sets-btn').forEach(b => {
+        const val = parseInt(b.getAttribute('data-sets'));
+        if (val === appState.maxSets) {
+          b.className = "sets-btn py-2 rounded-xl font-bold border border-emerald-500 bg-emerald-500/20 text-emerald-300";
+        } else {
+          b.className = "sets-btn py-2 rounded-xl font-bold border border-slate-700 bg-slate-800 text-slate-300";
+        }
+      });
+    }
+
+    // Timer
+    function startTimerLoop() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if (appState.timerActive) {
+          appState.timerSeconds++;
+          const mins = String(Math.floor(appState.timerSeconds / 60)).padStart(2, '0');
+          const secs = String(appState.timerSeconds % 60).padStart(2, '0');
+          const el = document.getElementById('matchTimer');
+          if (el) el.textContent = `${mins}:${secs}`;
+        }
+      }, 1000);
+    }
+
+    function toggleTimer() {
+      appState.timerActive = !appState.timerActive;
+    }
+
+    function toggleAudio() {
+      appState.audioEnabled = !appState.audioEnabled;
+      const icon = document.getElementById('audioIcon');
+      if (appState.audioEnabled) {
+        icon.className = 'fa-solid fa-volume-high text-emerald-400 text-xs';
+      } else {
+        icon.className = 'fa-solid fa-volume-xmark text-slate-500 text-xs';
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+
+    function render() {
+      // Score numbers
+      document.getElementById('scoreA').textContent = appState.teamA.score;
+      document.getElementById('scoreB').textContent = appState.teamB.score;
+
+      // Names
+      document.getElementById('nameA').textContent = appState.teamA.name;
+      document.getElementById('nameB').textContent = appState.teamB.name;
+
+      // Serving State
+      const panelA = document.getElementById('panelTeamA');
+      const panelB = document.getElementById('panelTeamB');
+      const serveTagA = document.getElementById('serveTagA');
+      const serveTagB = document.getElementById('serveTagB');
+
+      if (appState.serving === 'A') {
+        panelA.classList.add('serving');
+        panelB.classList.remove('serving');
+        serveTagA.classList.remove('opacity-0', 'invisible');
+        serveTagB.classList.add('opacity-0', 'invisible');
+      } else {
+        panelB.classList.add('serving');
+        panelA.classList.remove('serving');
+        serveTagB.classList.remove('opacity-0', 'invisible');
+        serveTagA.classList.add('opacity-0', 'invisible');
+      }
+
+      // Set Badges
+      renderSetPills('A');
+      renderSetPills('B');
+
+      // Status Indicator
+      updateStatusHeader();
+
+      // History Bar
+      renderHistoryBar();
+    }
+
+    function renderSetPills(teamId) {
+      const container = document.getElementById(`setsWon${teamId}`);
+      const team = teamId === 'A' ? appState.teamA : appState.teamB;
+      const needed = Math.ceil(appState.maxSets / 2);
+      let html = '';
+      for (let i = 0; i < needed; i++) {
+        const won = i < team.sets;
+        const cls = won ? 'bg-emerald-400 border-emerald-300 shadow-sm shadow-emerald-400/50' : 'bg-slate-800 border-slate-700';
+        html += `<span class="w-2.5 h-2.5 rounded-full border ${cls} transition-all"></span>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function updateStatusHeader() {
+      const text = document.getElementById('statusPillText');
+      const mobileText = document.getElementById('mobileStatusText');
+      const a = appState.teamA.score;
+      const b = appState.teamB.score;
+      const target = appState.targetPoints;
+      const needed = Math.ceil(appState.maxSets / 2);
+
+      let msg = `SET ${appState.currentSet} (${target}점제)`;
+
+      if (a >= target - 1 && b >= target - 1 && a === b) {
+        msg = `DEUCE (2점 차 승리 필요)`;
+      } else if (a >= target - 1 && a > b) {
+        const isMatch = (appState.teamA.sets === needed - 1);
+        msg = `${isMatch ? 'MATCH' : 'GAME'} POINT - ${appState.teamA.name}`;
+      } else if (b >= target - 1 && b > a) {
+        const isMatch = (appState.teamB.sets === needed - 1);
+        msg = `${isMatch ? 'MATCH' : 'GAME'} POINT - ${appState.teamB.name}`;
+      }
+
+      text.textContent = msg;
+      mobileText.textContent = msg;
+    }
+
+    function renderHistoryBar() {
+      const bar = document.getElementById('historyBar');
+      if (appState.setHistory.length === 0) {
+        bar.innerHTML = `<span class="text-slate-600 text-[11px]">진행된 세트 기록이 여기에 정돈되어 표시됩니다</span>`;
+        return;
+      }
+      let html = '';
+      appState.setHistory.forEach(h => {
+        const winA = h.winner === 'A';
+        html += `
+          <div class="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono flex items-center gap-1.5 shadow-sm">
+            <span class="text-slate-500 font-bold">S${h.set}</span>
+            <span class="${winA ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${h.scoreA}</span>
+            <span class="text-slate-600">:</span>
+            <span class="${!winA ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${h.scoreB}</span>
+          </div>
+        `;
+      });
+      bar.innerHTML = html;
+    }
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') addPoint('A');
+      else if (e.key === 'l' || e.key === 'L' || e.key === 'ArrowRight') addPoint('B');
+      else if (e.key === 'z' || e.key === 'Z') undoLastAction();
+      else if (e.key === ' ' || e.key === 'c' || e.key === 'C') swapSides();
+    });
+
+    // Enter key submits name modal
+    document.getElementById('nameInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') saveNameInput();
+    });
+
+    // Initialize on load
+    window.onload = function() {
+      startTimerLoop();
+      syncSettingsUI();
+      render();
+      updateUndoState();
+    };
+  </script>
+</body>
+</html>
